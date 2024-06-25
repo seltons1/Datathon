@@ -7,7 +7,7 @@ RAW_PATH = 'raw/'
 
 SILVER_PATH = 'silver/'
 
-def ler_acidentes_IPEA(conn):
+def ler_acidentes_IPEA(conn) -> pd.DataFrame:
     """
     [Description]
 
@@ -104,10 +104,48 @@ def ler_acidentes_IPEA(conn):
     
     return df_total
 
+def ler_acidentes(conn) -> None:
+    """
+    [Description]
+
+        Reads SIMU files - Transport Accidents.
+        Records with the fields necessary for the analysis.
+    
+    [Source]
+
+        Link: https://bigdata-arquivos.icict.fiocruz.br/PUBLICO/SIMU/temas/simu-acidentes-transportes-mun-T.zip
+
+    [Goal]
+
+        Reading the .csv file through duckdb returning a dataframe.
+    
+    """
+    x = conn.read_csv(f"""{RAW_PATH}SIMU - Acidentes de Transportes/Acidentes de Transportes.csv""")
+
+    df_simu_acidentes = conn.execute("""SELECT * FROM x WHERE "Código IBGE" in ('3304557','5300108','3550308') """).df()
+
+    # Rename column 'Código IBGE'
+    df_simu_acidentes.rename(columns={'Código IBGE': 'cod'}, inplace=True)
+    
+    # Reading IPEA accidents
+    df_ipea_acientes = ler_acidentes_IPEA(conn)
+
+    # Rename column 'período'
+    df_ipea_acientes.rename(columns={'período': 'ano'}, inplace=True)
+
+    # Creating a new dataframe with merge between IPEA and SIMU data.
+    df_result = df_simu_acidentes.merge(df_ipea_acientes, on=['cod','ano'], how='inner')
+
+    # Creating .parquet file.
+    df_result.to_parquet(f"""{SILVER_PATH}acidentes-geral.parquet""", engine='pyarrow', compression='snappy')
+ 
+
 if __name__ == '__main__':
 
     conn = duckdb.connect(':memory:')
 
     print(ler_acidentes_IPEA(conn))
+
+    ler_acidentes(conn)
 
     
