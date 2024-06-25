@@ -3,9 +3,14 @@ import pandas as pd
 import pandasql as psql
 import gc
 
+# Files paths.
 RAW_PATH = 'raw/'
-
 SILVER_PATH = 'silver/'
+
+# Definition of states for analysis according to the IBGE code
+CODIGO_IBGE_SIH = "330455,530010,355030"
+
+CODIGO_IBGE = "3304557,5300108,3550308"
 
 def ler_acidentes_IPEA(conn) -> pd.DataFrame:
     """
@@ -139,6 +144,40 @@ def ler_acidentes(conn) -> None:
     # Creating .parquet file.
     df_result.to_parquet(f"""{SILVER_PATH}acidentes-geral.parquet""", engine='pyarrow', compression='snappy')
  
+def ler_carteira(conn) -> None:
+    """
+    [Description]
+
+        Reads the SIMU files - Enterprise Portfolio.
+        Records with the fields necessary for the analysis.
+
+    [Source]
+
+        Link: https://bigdata-arquivos.icict.fiocruz.br/PUBLICO/SIMU/bases_dados/CARTEIRA/simu-carteira-mun-T.zip
+
+    [Goal]
+
+        Reading the .csv file through duckdb returning a dataframe.
+
+
+    """
+    x = conn.read_csv(f"""{RAW_PATH}simu-carteira-mun-T.csv""")
+
+    result = conn.execute(
+        f"""SELECT * FROM x WHERE "Código IBGE" in ({CODIGO_IBGE}) """
+    ).df()
+
+    # Create .parquet file.
+    result.to_parquet(
+        f"""{SILVER_PATH}simu-carteira-mun-T.parquet""", engine="pyarrow", compression="snappy"
+    )
+
+    # Cleaning dataframe.
+    del result
+
+    # Garbage collect.
+    gc.collect()
+
 
 if __name__ == '__main__':
 
@@ -147,5 +186,7 @@ if __name__ == '__main__':
     print(ler_acidentes_IPEA(conn))
 
     ler_acidentes(conn)
+
+    ler_carteira(conn)
 
     
