@@ -12,6 +12,41 @@ CODIGO_IBGE_SIH = "330455,530010,355030"
 
 CODIGO_IBGE = "3304557,5300108,3550308"
 
+# List with all brazilian states for analyze. In this analyzes we'll be analyze this big three states.
+ESTADOS_BRASILEIROS = [
+    # 'AC',  # Acre
+    # 'AL',  # Alagoas --
+    # 'AP',  # Amapá
+    # 'AM',  # Amazonas
+    # 'BA',  # Bahia --
+    # 'CE',  # Ceará --
+    "DF",  # Distrito Federal
+    # 'ES',  # Espírito Santo
+    # 'GO',  # Goiás
+    # 'MA',  # Maranhão --
+    # 'MT',  # Mato Grosso
+    # 'MS',  # Mato Grosso do Sul
+    # 'MG',  # Minas Gerais
+    # 'PA',  # Pará
+    # 'PB',  # Paraíba --
+    # 'PR',  # Paraná
+    # 'PE',  # Pernambuco --
+    # 'PI',  # Piauí --
+    "RJ",  # Rio de Janeiro
+    # 'RN',  # Rio Grande do Norte --
+    # 'RS',  # Rio Grande do Sul
+    # 'RO',  # Rondônia
+    # 'RR',  # Roraima
+    # 'SC',  # Santa Catarina
+    "SP",  # São Paulo
+    # 'SE',  # Sergipe --
+    # 'TO'   # Tocantins
+]
+
+# Initial param
+ANO_INICIAL = 2015
+ANO_FINAL = 2021
+
 def ler_acidentes_IPEA(conn) -> pd.DataFrame:
     """
     [Description]
@@ -209,6 +244,110 @@ def ler_frotas(conn) -> None:
 
     # Garbage collect.
     gc.collect()
+
+def ler_etlsih_file(conn):
+    """
+    [Description]
+
+        Reads files from the SUS Hospital Information System - SIHSUS.
+        Records with the fields necessary for the analysis.
+    
+    [Source]
+
+        Link: https://bigdata-arquivos.icict.fiocruz.br/PUBLICO/SIH/ETLSIH.zip
+
+    [Goal]
+
+        Reading of all files aggregated by UF, making them available in a .parquet file,
+        seeking to obtain better performance in data analysis.
+    
+    """
+    
+    # Definição das variáveis de apoio.
+    ano_inicial = ANO_INICIAL
+    ano_final = ANO_FINAL
+    serie = 12
+    numero = 1
+    ano = ano_inicial
+
+    # Loop into brazillian states
+    for estado in ESTADOS_BRASILEIROS:
+        
+        # Return initial variables to default value.
+        ano = ano_inicial
+        df_ano = None
+
+        # Loop between years that will be analyze
+        while ano_inicial <= ano_final:
+            
+            # Loop into months
+            while numero <= serie:
+
+                # Creating name of file to reading.
+                nome_arquivo = f"""{RAW_PATH}ETLSIH/ETLSIH.ST_{estado}_{ano}_{numero}_t.csv"""
+
+                try:
+                    # Query to return fields that we need.
+                    df = conn.execute(f"""SELECT int_muncod, 
+                                                 int_munnome, 
+                                                 ano_cmpt, 
+                                                 mes_cmpt, 
+                                                 def_sexo, 
+                                                 val_sh, 
+                                                 val_sp, 
+                                                 val_tot, 
+                                                 val_uti,
+                                                 diag_princ, 
+                                                 idade, 
+                                                 raca_cor, 
+                                                 int_capital, 
+                                                 int_sigla_uf, 
+                                                 int_codigo_uf, 
+                                                 int_regiao, 
+                                                 int_nome_uf,
+                                                 dia_semana_internacao,
+                                                 ano_internacao, 
+                                                 mes_internacao, 
+                                                 def_procedimento_realizado, 
+                                                 def_procedimento_solicitado,
+                                                 def_leitos, 
+                                                 def_diag_princ_cap, 
+                                                 def_diag_princ_grupo,
+                                                 def_diag_secun_grupo,
+                                                 def_diag_princ_cat,
+                                                 def_diag_secun_cat,
+                                                 def_diag_princ_subcat, 
+                                                 def_car_int, 
+                                                 def_cobranca,
+                                                 def_morte, 
+                                                 def_raca_cor, 
+                                                 def_idade_pub,
+                                                DIAGSEC1
+                                      FROM read_csv('{nome_arquivo}') where (DIAGSEC1 LIKE 'V%' AND DIAGSEC1 NOT LIKE 'V9%') AND int_muncod IN ({CODIGO_IBGE_SIH});""").fetchdf()
+                except FileNotFoundError as e:
+                    print(f"Error: {e}")
+
+                # Increment month.
+                numero += 1
+
+                # Concat first dataframe with dataframe in this loop
+                df_ano = pd.concat([df_ano, df], ignore_index=True)
+            
+            # Transform ['MES_CMPT'] field to string.
+            df_ano['MES_CMPT'] = df_ano['MES_CMPT'].astype(str)
+            
+            # Increment month and year variables.
+            ano = ano + 1
+            ano_inicial = ano
+            numero = 1
+
+        # Creating .parquet file agregate all years per state
+        df_ano.to_parquet(f"""{SILVER_PATH}ETLSIH_parquet/ETLSIH.ST_{estado}.parquet""", engine='pyarrow', compression='snappy')
+
+        # Increment support variables.
+        numero = 1
+        ano_inicial = ANO_INICIAL
+
 
 if __name__ == '__main__':
 
