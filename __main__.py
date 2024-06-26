@@ -178,6 +178,37 @@ def ler_carteira(conn) -> None:
     # Garbage collect.
     gc.collect()
 
+def ler_frotas(conn) -> None:
+    """
+    [Description]
+
+        Reads SIMU files - Motorization - Evolutionary Fleet.
+        Records with the fields necessary for the analysis.
+
+    [Source]
+
+        Link: https://bigdata-arquivos.icict.fiocruz.br/PUBLICO/SIMU/bases_dados/FROTA/simu-frota-mun_T.zip
+
+    [Goal]
+
+        Reading the .csv file through duckdb returning a dataframe.
+
+    """
+    x = conn.read_csv(f"""{RAW_PATH}simu-frota-mun_T.csv""")
+
+    result = conn.execute(
+        f"""SELECT * FROM x WHERE "Código IBGE" in ({CODIGO_IBGE}) """
+    ).df()
+
+    # Creating .parquet file.
+    result.to_parquet(
+        f"""{SILVER_PATH}simu-frota-mun_T.parquet""", engine="pyarrow", compression="snappy"
+    )
+    # Cleaning dataframe.
+    del result
+
+    # Garbage collect.
+    gc.collect()
 
 if __name__ == '__main__':
 
@@ -188,5 +219,7 @@ if __name__ == '__main__':
     ler_acidentes(conn)
 
     ler_carteira(conn)
+
+    ler_frotas(conn)
 
     
