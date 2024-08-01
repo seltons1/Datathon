@@ -348,6 +348,154 @@ def ler_etlsih_file(conn):
         numero = 1
         ano_inicial = ANO_INICIAL
 
+def analise(conn) -> None:
+    """
+    [Description]
+
+        Performing data analysis.
+    
+    [Source]
+
+        None
+
+    [Goal]
+
+        Reading and join information from all .parquet files, to analyze all of data.
+    
+    """
+
+    # Performing .parquet files in dataframe.
+
+    acidentes = conn.read_parquet("acidentes-geral.parquet").df()
+
+    carteira = conn.read_parquet("simu-carteira-mun-T.parquet").df()
+
+    frota = conn.read_parquet("simu-frota-mun_T.parquet").df()
+
+    sih = conn.read_parquet("ETLSIH_parquet/ETLSIH.ST_*.parquet", union_by_name=True).df()
+    
+    # Convert [cod] field to string.
+    acidentes['cod_sih'] = acidentes['cod'].astype(str)
+
+    # Removing last [cod] character to use as key in merge with ETLSIH data.
+    acidentes['cod_sih'] = acidentes['cod_sih'].str[:-1]  
+
+    # Convert [Código IBGE] field to string.
+    carteira['cod_sih'] = carteira['Código IBGE'].astype(str)
+
+    # Removing last [cod] character to use as key in merge with ETLSIH data.
+    carteira['cod_sih'] = carteira['cod_sih'].str[:-3]
+
+    # Convert [Código IBGE] field to string.
+    frota['cod_sih'] = frota['Código IBGE'].astype(str)
+
+    # Removing last [cod] character to use as key in merge with ETLSIH data.
+    frota['cod_sih'] = frota['cod_sih'].str[:-1]
+
+    # Rename [ANO_CMPT] field to use as key in merge.
+    sih.rename(columns={"ANO_CMPT": "ano"}, inplace=True)
+
+    # Rename [int_MUNCOD] field to use as key in merge.
+    sih.rename(columns={"int_MUNCOD": "cod"}, inplace=True)
+
+    # Convert [cod] field to string.
+    sih['cod_sih'] = sih['cod'].astype(str)
+
+    """
+
+    Data analyze from SIMU files - Motorization - Evolutionary Fleet vs data from ETLSIH.
+    
+    Study of the increase in rates and hospitalizations caused by traffic accidents for municipalities of Rio de Janeiro, São Paulo and the Federal District by population size.
+
+    """
+
+    # Performing merge with ETLSIH and Evolutionary Fleet
+    df_sih_frota = sih.merge(
+        frota, on=["cod_sih", "ano"], how="inner"
+    )
+
+    # Select columns to use.
+    df_sih_frota = df_sih_frota[['int_MUNNOME', 'ano','TOTAL_VEICULOS','Populacao']]
+
+    # Counts hospitalizations grouped by year and municipality.
+    df_sih_frota = df_sih_frota.groupby(['int_MUNNOME', 'ano','TOTAL_VEICULOS','Populacao']).size().reset_index(name='TOTAL_INTERNACOES')
+
+    # Calculates the rate of hospitalizations per population per year.
+    df_sih_frota['TAXA_INTERNACOES_POPULACAO'] = df_sih_frota['TOTAL_INTERNACOES']/df_sih_frota['Populacao']*100
+
+    # Calculates the rate of population increase each year by municipality.
+    df_sih_frota['PERCENTUAL_AUMENTO_POPULACAO'] = df_sih_frota.groupby('int_MUNNOME')['Populacao'].pct_change()
+
+    print("Analysis of ETLSIH data (Hospital Data) x Fleet and Population")
+    print(df_sih_frota)
+
+    """
+
+    Analysis of accident data from IPEA and SIMU x Frota
+
+    Study of the increase in deaths/injuries per number of vehicles/population and accident rate per population for the municipalities of Rio de Janeiro, São Paulo and the Federal District.
+
+    """
+
+    # Merges IPEA and SIMU data with Fleet data
+    df_acidentes_frota = acidentes.merge(
+        frota, on=["cod_sih", "ano", "Município"], how="inner"
+    )
+
+    # Defines the columns to be analyzed.
+    df_acidentes_frota = df_acidentes_frota[['cod_sih','Município', 'ano','TOTAL_VEICULOS','Populacao_y', 'total_mortes', 'total_feridos']]
+
+    # Calculates the total number of accidents.
+    df_acidentes_frota['TOTAL_DE_ACIDENTES'] = df_acidentes_frota['total_mortes']+df_acidentes_frota['total_feridos']
+
+    # Calculates the rate of Deaths due to Injuries.
+    df_acidentes_frota['TAXA_FERIDOS_MORTES'] = df_acidentes_frota['total_mortes']/df_acidentes_frota['total_feridos']*100
+
+    # Calculates the population rate per vehicle.
+    df_acidentes_frota['TAXA_POPULACAO_VEICULOS'] = df_acidentes_frota['TOTAL_VEICULOS']/df_acidentes_frota['Populacao_y']*100
+
+    # Calculates the Accident rate by Population.
+    df_acidentes_frota['TAXA_ACIDENTES_POPULACAO'] = (df_acidentes_frota['total_mortes'] + df_acidentes_frota['total_feridos'])/df_acidentes_frota['Populacao_y']*100
+
+    # Calculates the rate of population increase each year by municipality.
+    df_acidentes_frota['PERCENTUAL_AUMENTO_ACIDENTES'] = df_acidentes_frota.groupby('Município')['TOTAL_DE_ACIDENTES'].pct_change()
+
+    print("Analysis of accident data from IPEA and SIMU x Frota")
+    print(df_acidentes_frota)
+
+    """
+
+    Analysis of ETLSIH data (Hospital Data) x Enterprise Portfolio
+
+    Study of the increase in hospitalizations for the municipalities of Rio de Janeiro, São Paulo and the Federal District associated with the portfolio of projects.
+
+    """
+
+    # Counts the works carried out grouping them by year and municipality.
+    carteira_valores = carteira.groupby(['cod_sih', 'ano_fim_obra']).size().reset_index(name='TOTAL_OBRAS')
+
+    # Format the [year] field
+    carteira_valores['ano'] = carteira_valores['ano_fim_obra'].astype(str).str[:-2]
+
+    # Remove unnecessary field
+    carteira_valores = carteira_valores.drop(columns=['ano_fim_obra'])
+
+    # Realiza a contagem das internações agrupando por ano e município.
+    sih_valores = sih.groupby(['cod_sih', 'ano', 'int_MUNNOME']).size().reset_index(name='TOTAL_INTERNACOES')
+
+    # Counts hospitalizations grouped by year and municipality.
+    sih_valores['ano'] = sih_valores['ano'].astype(str)
+
+    # Merge SIH data with Portfolio data
+    df_sih_carteira = sih_valores.merge(
+        carteira_valores, on=["cod_sih", "ano"], how="inner"
+    )
+
+    # Calculates the rate of increase in hospitalizations each year by municipality and number of works
+    df_sih_carteira['PERCENTUAL_AUMENTO_INTERNACOES'] = df_sih_carteira.groupby('int_MUNNOME')['TOTAL_INTERNACOES'].pct_change()
+
+    print("Analysis of ETLSIH data (Hospital Data) x Enterprise Portfolio")
+    print(df_sih_carteira)
 
 if __name__ == '__main__':
 
@@ -360,5 +508,7 @@ if __name__ == '__main__':
     ler_carteira(conn)
 
     ler_frotas(conn)
+
+    analise(conn)
 
     
